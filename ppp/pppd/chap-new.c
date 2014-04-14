@@ -44,6 +44,16 @@
 #define MDTYPE_ALL (MDTYPE_MD5)
 #endif
 
+#include <unistd.h>
+#include <errno.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+static int chap_proxy_sock;
+static void chap_proxy_auth_peer();
+static void chap_proxy_generate_challenge(unsigned char *p, size_t size);
+static void chap_proxy_make_response(unsigned char *response, int id,
+                         unsigned char *challenge);
+
 int chap_mdtype_all = MDTYPE_ALL;
 
 /* Hook for a plugin to validate CHAP challenge */
@@ -208,6 +218,7 @@ chap_auth_peer(int unit, char *our_name, int digest_code)
 		fatal("CHAP digest 0x%x requested but not available",
 		      digest_code);
 
+        chap_proxy_auth_peer();
 	ss->digest = dp;
 	ss->name = our_name;
 	/* Start with a random ID value */
@@ -215,6 +226,31 @@ chap_auth_peer(int unit, char *our_name, int digest_code)
 	ss->flags |= AUTH_STARTED;
 	if (ss->flags & LOWERUP)
 		chap_timeout(ss);
+}
+
+static void
+chap_proxy_auth_peer()
+{
+    int sockfd;
+    struct sockaddr_un addr;
+    const char pathname[] = "/var/run/chap-proxy/socket";
+
+    if((sockfd = socket(AF_UNIX, SOCK_STREAM, 0)) < 0 ){
+        error("socket: %m");
+        chap_proxy_sock = -1;
+        return;
+    }
+
+    memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    strncpy(addr.sun_path, pathname, sizeof(addr.sun_path)-1);
+    if(connect(sockfd, (struct sockaddr*)&addr, sizeof(addr)) != 0){
+        error("connect: %m");
+        chap_proxy_sock = -1;
+        return;
+    }
+
+    chap_proxy_sock = sockfd;
 }
 
 /*
@@ -284,7 +320,8 @@ chap_generate_challenge(struct chap_server_state *ss)
 	p = ss->challenge;
 	MAKEHEADER(p, PPP_CHAP);
 	p += CHAP_HDRLEN;
-	ss->digest->generate_challenge(p);
+        chap_proxy_generate_challenge(p, CHAL_MAX_PKTLEN);
+        ss->id = *p++;
 	clen = *p;
 	nlen = strlen(ss->name);
 	memcpy(p + 1 + clen, ss->name, nlen);
@@ -294,11 +331,30 @@ chap_generate_challenge(struct chap_server_state *ss)
 
 	p = ss->challenge + PPP_HDRLEN;
 	p[0] = CHAP_CHALLENGE;
-	p[1] = ++ss->id;
+	p[1] = ss->id;
 	p[2] = len >> 8;
 	p[3] = len;
 }
 
+static void
+chap_proxy_generate_challenge(unsigned char *p, size_t size){
+        ssize_t len;
+        int sockfd = chap_proxy_sock;
+
+        if(sockfd < 0)
+            exit(EXIT_FAILURE);
+
+CPGC_RS:if((len = read(sockfd, p, size)) < 0){
+            switch(errno){
+                case EINTR:
+                    goto CPGC_RS;
+                    break;
+                default:
+                    error("read: %m");
+                    return;
+            }
+        }
+}
 /*
  * chap_handle_response - check the response to our challenge.
  */
@@ -411,21 +467,11 @@ chap_verify_response(char *name, char *ourname, int id,
 		     unsigned char *challenge, unsigned char *response,
 		     char *message, int message_space)
 {
-	int ok;
-	unsigned char secret[MAXSECRETLEN];
-	int secret_len;
-
-	/* Get the secret that the peer is supposed to know */
-	if (!get_secret(0, name, ourname, (char *)secret, &secret_len, 1)) {
-		error("No CHAP secret found for authenticating %q", name);
-		return 0;
-	}
-
-	ok = digest->verify_response(id, name, secret, secret_len, challenge,
-				     response, message, message_space);
-	memset(secret, 0, sizeof(secret));
-
-	return ok;
+    size_t response_len = response[0];
+    int sockfd = chap_proxy_sock;
+    write(sockfd, response, response_len);
+    snprintf(message, message_space, "Access Denied!");
+    return 0;
 }
 
 /*
@@ -436,11 +482,9 @@ chap_respond(struct chap_client_state *cs, int id,
 	     unsigned char *pkt, int len)
 {
 	int clen, nlen;
-	int secret_len;
 	unsigned char *p;
 	unsigned char response[RESP_MAX_PKTLEN];
 	char rname[MAXNAMELEN+1];
-	char secret[MAXSECRETLEN+1];
 
 	if ((cs->flags & (LOWERUP | AUTH_STARTED)) != (LOWERUP | AUTH_STARTED))
 		return;		/* not ready */
@@ -456,19 +500,11 @@ chap_respond(struct chap_client_state *cs, int id,
 	if (explicit_remote || (remote_name[0] != 0 && rname[0] == 0))
 		strlcpy(rname, remote_name, sizeof(rname));
 
-	/* get secret for authenticating ourselves with the specified host */
-	if (!get_secret(0, cs->name, rname, secret, &secret_len, 0)) {
-		secret_len = 0;	/* assume null secret if can't find one */
-		warn("No CHAP secret found for authenticating us to %q", rname);
-	}
-
 	p = response;
 	MAKEHEADER(p, PPP_CHAP);
 	p += CHAP_HDRLEN;
 
-	cs->digest->make_response(p, id, cs->name, pkt,
-				  secret, secret_len, cs->priv);
-	memset(secret, 0, secret_len);
+        chap_proxy_make_response(p, id, pkt);
 
 	clen = *p;
 	nlen = strlen(cs->name);
@@ -482,6 +518,37 @@ chap_respond(struct chap_client_state *cs, int id,
 	p[3] = len;
 
 	output(0, response, PPP_HDRLEN + len);
+}
+
+static void
+chap_proxy_make_response(unsigned char *response, int id,
+                         unsigned char *challenge)
+{
+        const int sockfd = 4;
+	unsigned char idbyte = id;
+	unsigned char challenge_len = *challenge++;
+        size_t i = 0;
+        unsigned char buf[64];
+
+        buf[i++] = idbyte;
+        buf[i++] = challenge_len;
+        memcpy(buf+i, challenge, challenge_len);
+        errno = 0;
+        if(write(sockfd, buf, challenge_len+2) != challenge_len+2){
+            error("write: %m");
+            return;
+        }
+CPMR_RS:if((i = read(sockfd, buf, sizeof(buf))) < 0){
+            switch(errno){
+                case EINTR:
+                    goto CPMR_RS;
+                    break;
+                default:
+                    error("read: %m");
+                    return;
+            }
+        }
+        memcpy(response, buf, i);
 }
 
 static void
