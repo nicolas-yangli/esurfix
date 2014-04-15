@@ -50,7 +50,7 @@
 #include <sys/un.h>
 static int chap_proxy_sock;
 static void chap_proxy_auth_peer();
-static void chap_proxy_generate_challenge(unsigned char *p, size_t size);
+static void chap_proxy_generate_challenge(unsigned char *p, size_t size, int *id);
 static void chap_proxy_make_response(unsigned char *response, int id,
                          unsigned char *challenge);
 
@@ -321,8 +321,7 @@ chap_generate_challenge(struct chap_server_state *ss)
 	p = ss->challenge;
 	MAKEHEADER(p, PPP_CHAP);
 	p += CHAP_HDRLEN;
-        chap_proxy_generate_challenge(p, CHAL_MAX_PKTLEN);
-        ss->id = *p++;
+        chap_proxy_generate_challenge(p, CHAL_MAX_PKTLEN, &(ss->id));
 	clen = *p;
 	nlen = strlen(ss->name);
 	memcpy(p + 1 + clen, ss->name, nlen);
@@ -338,15 +337,16 @@ chap_generate_challenge(struct chap_server_state *ss)
 }
 
 static void
-chap_proxy_generate_challenge(unsigned char *p, size_t size){
+chap_proxy_generate_challenge(unsigned char *p, size_t size, int *id){
         ssize_t len;
+        unsigned char buf[64];
         int sockfd = chap_proxy_sock;
 
         if(sockfd < 0)
             exit(EXIT_FAILURE);
 
         notice("fetching challenge from CHAP proxy");
-CPGC_RS:if((len = read(sockfd, p, size)) < 0){
+CPGC_RS:if((len = read(sockfd, buf, sizeof(buf))) < 0){
             switch(errno){
                 case EINTR:
                     goto CPGC_RS;
@@ -356,6 +356,10 @@ CPGC_RS:if((len = read(sockfd, p, size)) < 0){
                     return;
             }
         }
+        *id = buf[0];
+        if( buf[1] > len-2 )
+            buf[1] = len-2;
+        memcpy(p, buf+1, len-1);
 }
 /*
  * chap_handle_response - check the response to our challenge.
@@ -532,13 +536,17 @@ chap_proxy_make_response(unsigned char *response, int id,
 	unsigned char challenge_len = *challenge++;
         size_t i = 0;
         unsigned char buf[64];
+        unsigned char message_len;
 
         notice("requesting CHAP proxy");
         buf[i++] = idbyte;
         buf[i++] = challenge_len;
         memcpy(buf+i, challenge, challenge_len);
+        message_len = challenge_len + 2;
+        if( message_len > sizeof(buf) )
+            message_len = sizeof(buf);
         errno = 0;
-        if(write(sockfd, buf, challenge_len+2) != challenge_len+2){
+        if(write(sockfd, buf, message_len+2) != message_len+2){
             error("write: %m");
             return;
         }
