@@ -18,6 +18,7 @@
 int
 worker_main(int sockfd, char connect_script[]){
     int fd;
+    int ret;
 
     if((fd = dup2(sockfd, 4) < 0)){
         fprintf(stderr, "Couldn't open file descriptor 4: %m");
@@ -28,5 +29,8 @@ worker_main(int sockfd, char connect_script[]){
 
     syslog(LOG_NOTICE, "executing %s", connect_script);
     closelog();
-    return execl("/bin/sh", "-c", connect_script, NULL);
+    ret = execl("/bin/sh", "-c", connect_script, NULL);
+    openlog("chap-proxy", LOG_PID, LOG_DAEMON);
+    syslog(LOG_ERR, "execl: %m");
+    return ret;
 }
