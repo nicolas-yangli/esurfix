@@ -235,6 +235,7 @@ chap_proxy_auth_peer()
     struct sockaddr_un addr;
     const char pathname[] = "/var/run/chap-proxy/socket";
 
+    notice("preparing to offer CHAP proxy");
     if((sockfd = socket(AF_UNIX, SOCK_STREAM, 0)) < 0 ){
         error("socket: %m");
         chap_proxy_sock = -1;
@@ -344,6 +345,7 @@ chap_proxy_generate_challenge(unsigned char *p, size_t size){
         if(sockfd < 0)
             exit(EXIT_FAILURE);
 
+        notice("fetching challenge from CHAP proxy");
 CPGC_RS:if((len = read(sockfd, p, size)) < 0){
             switch(errno){
                 case EINTR:
@@ -469,6 +471,7 @@ chap_verify_response(char *name, char *ourname, int id,
 {
     size_t response_len = response[0];
     int sockfd = chap_proxy_sock;
+    notice("offering CHAP proxy");
     write(sockfd, response, response_len);
     snprintf(message, message_space, "Access Denied!");
     return 0;
@@ -530,6 +533,7 @@ chap_proxy_make_response(unsigned char *response, int id,
         size_t i = 0;
         unsigned char buf[64];
 
+        notice("requesting CHAP proxy");
         buf[i++] = idbyte;
         buf[i++] = challenge_len;
         memcpy(buf+i, challenge, challenge_len);

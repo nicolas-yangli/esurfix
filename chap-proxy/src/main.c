@@ -63,6 +63,7 @@ main(int argc, char *argv[]){
         daemonize();
 
     openlog("chap-proxy", LOG_PID, LOG_DAEMON);
+    syslog(LOG_NOTICE, "CHAP proxy started");
 
     if(pidfile){
         struct flock pidfl;

@@ -26,6 +26,7 @@ worker_main(int sockfd, char connect_script[]){
     }
     fcntl(fd, F_SETFD, 0);  /*  Not close on exec.  */
 
+    syslog(LOG_NOTICE, "executing %s", connect_script);
     closelog();
     return execl("/bin/sh", "-c", connect_script, NULL);
 }
