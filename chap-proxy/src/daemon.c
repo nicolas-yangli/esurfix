@@ -28,7 +28,7 @@ daemonize(){
     }
 
     setsid();
-    signal(SIGHUP, SIG_IGN);
+    set_signal_handler(SIGHUP, SIG_IGN);
     if((pid = fork()) < 0){     /* fork to not be a session leader */
         fprintf(stderr, "Couldn't daemonize (fork failed: %m)");
         exit(EXIT_FAILURE);
@@ -51,3 +51,12 @@ daemonize(){
     return 0;
 }
 
+int
+set_signal_handler(int signo, void (*handler)(int)){
+    struct sigaction sa;
+
+    sa.sa_flags = 0;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_handler = handler;
+    return sigaction(signo, &sa, NULL);
+}

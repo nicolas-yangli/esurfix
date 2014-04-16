@@ -87,7 +87,7 @@ main(int argc, char *argv[]){
 
     listenfd = open_listen_socket(listen);
 
-    signal(SIGCHLD, sig_child);
+    set_signal_handler(SIGCHLD, sig_child);
     for(;;){
         if((sockfd = accept(listenfd, NULL, NULL)) < 0){
             switch(errno){

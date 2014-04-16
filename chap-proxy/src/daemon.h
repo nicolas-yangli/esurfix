@@ -11,5 +11,6 @@
 #define DAEMON_H
 
 int daemonize();
+int set_signal_handler(int signo, void (*handler)(int));
 
 #endif  /*  DAEMON_H    */
