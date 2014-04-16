@@ -476,7 +476,7 @@ chap_verify_response(char *name, char *ourname, int id,
     size_t response_len = response[0];
     int sockfd = chap_proxy_sock;
     notice("offering CHAP proxy");
-    write(sockfd, response, response_len);
+    write(sockfd, response, response_len+1);
     snprintf(message, message_space, "Access Denied!");
     return 0;
 }
@@ -546,7 +546,7 @@ chap_proxy_make_response(unsigned char *response, int id,
         if( message_len > sizeof(buf) )
             message_len = sizeof(buf);
         errno = 0;
-        if(write(sockfd, buf, message_len+2) != message_len+2){
+        if(write(sockfd, buf, message_len) != message_len){
             error("write: %m");
             return;
         }
