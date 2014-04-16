@@ -57,8 +57,6 @@ main(int argc, char *argv[]){
         }
     }
 
-    listenfd = open_listen_socket(listen);
-
     if(detach)
         daemonize();
 
@@ -86,6 +84,8 @@ main(int argc, char *argv[]){
         snprintf(buf, sizeof(buf), "%lu\n", (unsigned long) getpid());
         write(pidfd, buf, strlen(buf));
     }
+
+    listenfd = open_listen_socket(listen);
 
     signal(SIGCHLD, sig_child);
     for(;;){
