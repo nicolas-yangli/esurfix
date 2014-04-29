@@ -1,38 +1,4 @@
-eSurfix: 天翼校园客户端的第三方 Linux 解决方案
+本项目已永久拆分为
 
-Background
-==========
-
-天翼校园客户端 (eSurfing) 使用了修改过的 CHAP 进行身份认证。在 Windows 下，通过 
-NDIS filter 在内核空间拦截并修改 CHAP response 数据包. 在 Mac OS X 下，通过修改
-过的 pppd 进行身份认证。
-
-本项目通过 MITM 方式，将来自 access concentrator 的 CHAP challenage 重放给天翼客
-户端, 取得 response, 以完成身份认证。
-
-Introduction
-============
-
-本项目包含一个修改过的 pppd, 用于实现 CHAP challenge 和 response 的重放，和一个 
-daemon chap-proxy, 用于在多个 pppd 进程间调度 challenge 和 response. 
-
-How to Use
-==========
-
-Linux 机器需要有双网卡，一个网卡连接到电信的端口，另一个网卡与能运行天翼客户端的
-机器连接。
-
-1) 在 Linux 机器上 运行 chap-proxy daemon 和 pppoe-server(依赖 rp-pppoe)
-2) 在另一台机器上通过天翼客户端连接到 pppoe-server
-3) 余下操作将自动完成， Linux 机器将完成 PPPoE 连接，天翼客户端的连接将被拒绝。 
-
-Usage of chap-proxy
--------------------
-chap-proxy -c "Script to call PPPoE"
-
-例子：
-OpenWRT:
-$ chap-proxy -c "/sbin/ifup wan"
-
-pppoe-server 的用法请参阅 rp-pppoe 的文档。
-
+* chap-proxy: https://github.com/BillLeecn/chap-proxy
+* modified ppp: https://github.com/BillLeecn/ppp
